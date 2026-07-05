@@ -2,14 +2,21 @@
 
 This repository contains an AWS EKS reference design for **The Redemption**, a business-critical microservice responsible for global hotel point deductions.
 
+**Repository:** [github.com/bansodashish/accor_assignment](https://github.com/bansodashish/accor_assignment)
+
+```bash
+git clone https://github.com/bansodashish/accor_assignment.git
+cd accor_assignment
+```
+
 ## Deliverables
 
 - `terraform/` — Modular Terraform infrastructure: root composition wires focused modules (network, eks, kms, secrets, dynamodb, sqs, iam, addons, vpc-endpoints, ecr, waf, dns).
 - `k8s/base/` — Kubernetes base manifests shared across all environments.
 - `k8s/overlays/{dev,staging,prod}/kustomization.yaml` — Single Kustomize overlay file per environment with all patches inlined (replicas, resources, WAF ARN, Secrets Manager path, Karpenter node role, HPA limits).
-- `.checkov.yaml` / `.kube-linter.yaml` — Policy-as-code configs; enforced in CI via Checkov, Trivy, and kube-linter.
-- `docs/archtitecture_diagram.drawio` — Importable draw.io architecture diagram with AWS service icons.
-- `output/pdf/redemption_sre_design.pdf` — Executive SRE assessment document (Executive Summary, Core Architectural Decisions, Scalability Strategy, Security and Networking, Reliability and Observability, Failure Recovery, Team Delegation Plan).
+- `docs/archtitecture_diagram.drawio` — Source draw.io architecture diagram.
+- `docs/architecture_diagram.png` — Exported architecture diagram image.
+- `docs/redemption_sre_design.pdf` — Executive SRE assessment document (Executive Summary, Core Architectural Decisions, Scalability Strategy, Security and Networking, Reliability and Observability, Failure Recovery, Team Delegation Plan).
 
 ## Assumptions
 
@@ -49,27 +56,9 @@ kustomize build k8s/overlays/dev | kubectl apply -f -
 kubectl rollout status deployment/redemption-api -n redemption --timeout=300s
 ```
 
-## Sync WAF ARN Into Overlays
+## WAF ARN In Overlays
 
-WAF ACL ARNs in the overlay `kustomization.yaml` files are managed from Terraform output so you do not edit them manually.
-
-```bash
-# From repo root, sync all environments (dev/staging/prod)
-./scripts/sync_waf_arn_to_ingress.sh
-
-# Or sync a single environment
-./scripts/sync_waf_arn_to_ingress.sh prod
-```
-
-This script:
-
-- Runs `terraform output -raw waf_web_acl_arn` against each env backend state.
-- Updates the WAF ARN annotation inline inside:
-    - `k8s/overlays/dev/kustomization.yaml`
-    - `k8s/overlays/staging/kustomization.yaml`
-    - `k8s/overlays/prod/kustomization.yaml`
-
-Commit the updated overlay files to trigger the next Jenkins pipeline run.
+WAF ACL ARNs are stored directly in each environment overlay `kustomization.yaml`. When the Terraform-managed WAF changes, update the corresponding overlay file and commit that change so the next Jenkins pipeline applies it.
 
 ## Jenkins Requirements
 
@@ -78,27 +67,25 @@ Commit the updated overlay files to trigger the next Jenkins pipeline run.
 - Git push permission to the tracked branch when `AUTO_COMMIT_GITOPS_UPDATES=true` (auto-commits WAF ARN updates).
 - Pipeline parameters: `ENVIRONMENT` (dev/staging/prod), `DEPLOY_TARGET` (infra-and-app/infra-only/app-only), `AUTO_APPROVE_TERRAFORM`, `AUTO_COMMIT_GITOPS_UPDATES`, `CLUSTER_NAME`, `AWS_REGION`.
 
-## Regenerate the PDF
+## Assessment Assets
 
-The assessment PDF is generated from `scripts/generate_assessment_assets.py` using ReportLab.
+The repository currently stores the generated assessment artifacts directly under `docs/`:
 
-```bash
-# Activate the virtual environment (created at .venv/)
-source .venv/bin/activate
-
-# Regenerate output/pdf/redemption_sre_design.pdf
-python scripts/generate_assessment_assets.py
-```
+- `docs/redemption_sre_design.pdf`
+- `docs/architecture_diagram.png`
+- `docs/archtitecture_diagram.drawio`
 
 ## Repository Layout
 
 ```text
 .
-├── .checkov.yaml                  # Checkov IaC policy config (used in CI)
-├── .kube-linter.yaml              # kube-linter K8s manifest policy config
+├── .gitignore
 ├── Jenkinsfile                    # Declarative pipeline: Terraform + Kustomize + kubectl, per-env
+├── README.md
 ├── docs
-│   └── archtitecture_diagram.drawio
+│   ├── architecture_diagram.png
+│   ├── archtitecture_diagram.drawio
+│   └── redemption_sre_design.pdf
 ├── k8s
 │   ├── base                       # Shared manifests — source of truth for all envs
 │   │   ├── clustersecretstore.yaml
@@ -123,20 +110,18 @@ python scripts/generate_assessment_assets.py
 │       │   └── kustomization.yaml
 │       └── prod                   # Single kustomization.yaml — all prod patches inlined
 │           └── kustomization.yaml
-├── output/pdf
-│   └── redemption_sre_design.pdf
-├── scripts
-│   ├── generate_assessment_assets.py  # Generates output/pdf/redemption_sre_design.pdf
-│   └── sync_waf_arn_to_ingress.sh     # Syncs WAF ARN from Terraform state into overlay kustomization.yaml
 └── terraform
+    ├── backend.tf
     ├── envs
     │   ├── dev
     │   │   ├── backend.hcl        # S3 backend partial config for dev
     │   │   └── terraform.tfvars   # Dev-specific variable values
     │   ├── staging
-    │   │   └── ...
+    │   │   ├── backend.hcl
+    │   │   └── terraform.tfvars
     │   └── prod
-    │       └── ...
+    │       ├── backend.hcl
+    │       └── terraform.tfvars
     ├── main.tf                    # Root composition — wires all modules
     ├── outputs.tf
     ├── providers.tf
