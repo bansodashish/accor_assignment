@@ -1,4 +1,4 @@
-# The Redemption - SRE Assessment
+# The Redemption - Assessment
 
 This repository contains an AWS EKS reference design for **The Redemption**, a business-critical microservice responsible for global hotel point deductions.
 
