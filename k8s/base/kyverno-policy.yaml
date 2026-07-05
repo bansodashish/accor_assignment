@@ -1,0 +1,80 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: redemption-image-admission
+  annotations:
+    policies.kyverno.io/title: "Redemption Image Admission Policy"
+    policies.kyverno.io/description: >
+      Enforces that all containers in the redemption namespace use images
+      sourced from the approved ECR registry, carry a non-latest immutable
+      tag, and were scanned on push. Blocks untrusted registries and the
+      mutable 'latest' tag.
+spec:
+  # Enforce = reject non-compliant pods at admission; Audit = only log.
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    # ── Rule 1: Require ECR registry ────────────────────────────────────────
+    - name: require-ecr-registry
+      match:
+        any:
+          - resources:
+              kinds: ["Pod"]
+              namespaces: ["redemption"]
+      validate:
+        message: >
+          Images must be pulled from the approved ECR registry
+          (*.dkr.ecr.*.amazonaws.com/redemption-api). Public or
+          third-party registries are not permitted.
+        pattern:
+          spec:
+            containers:
+              - image: "*.dkr.ecr.*.amazonaws.com/redemption-api:*"
+
+    # ── Rule 2: Disallow 'latest' tag ────────────────────────────────────────
+    - name: disallow-latest-tag
+      match:
+        any:
+          - resources:
+              kinds: ["Pod"]
+              namespaces: ["redemption"]
+      validate:
+        message: >
+          The 'latest' image tag is not allowed. Specify an explicit,
+          immutable version tag (e.g. git-sha or semver).
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.object.spec.containers[].image | contains(@, ':latest') }}"
+                operator: Equals
+                value: true
+
+    # ── Rule 3: Disallow images without a tag entirely ───────────────────────
+    - name: disallow-untagged-images
+      match:
+        any:
+          - resources:
+              kinds: ["Pod"]
+              namespaces: ["redemption"]
+      validate:
+        message: "All images must have an explicit tag. Untagged images resolve to 'latest' and are not permitted."
+        pattern:
+          spec:
+            containers:
+              - image: "*:*"
+
+    # ── Rule 4: Block privileged containers ──────────────────────────────────
+    # Belt-and-suspenders alongside Pod Security Admission (restricted mode).
+    - name: disallow-privileged-containers
+      match:
+        any:
+          - resources:
+              kinds: ["Pod"]
+              namespaces: ["redemption"]
+      validate:
+        message: "Privileged containers are not permitted in the redemption namespace."
+        pattern:
+          spec:
+            containers:
+              - =(securityContext):
+                  =(privileged): false

@@ -1,0 +1,21 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+*.tfplan
+*.tfplan.json
+override.tf
+override.tf.json
+
+# Temp / OS
+tmp/
+.DS_Store
+*.swp

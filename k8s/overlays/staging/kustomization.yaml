@@ -1,0 +1,87 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+patches:
+  - patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: redemption-api
+        namespace: redemption
+      spec:
+        replicas: 3
+        template:
+          spec:
+            containers:
+              - name: api
+                env:
+                  - name: ENVIRONMENT
+                    value: staging
+                  - name: AWS_REGION
+                    value: eu-west-1
+                  - name: IDEMPOTENCY_TABLE
+                    value: redemption-staging-idempotency
+
+  - patch: |
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata:
+        name: redemption-api
+        namespace: redemption
+      spec:
+        minReplicas: 3
+        maxReplicas: 60
+
+  - patch: |
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: redemption-api
+        namespace: redemption
+        annotations:
+          # Managed by scripts/sync_waf_arn_to_ingress.sh (do not edit manually)
+          alb.ingress.kubernetes.io/wafv2-acl-arn: "arn:aws:wafv2:eu-west-1:AWS_ACCOUNT:regional/webacl/redemption-staging/REPLACE_WAF_ID"
+      spec:
+        rules:
+          - host: redemption-staging.adscld.biz
+            http:
+              paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: redemption-api
+                      port:
+                        name: http
+
+  - patch: |
+      apiVersion: external-secrets.io/v1beta1
+      kind: ExternalSecret
+      metadata:
+        name: redemption-api
+        namespace: redemption
+      spec:
+        dataFrom:
+          - extract:
+              key: /staging/redemption/app
+
+  - patch: |
+      apiVersion: karpenter.k8s.aws/v1
+      kind: EC2NodeClass
+      metadata:
+        name: redemption-burst
+      spec:
+        role: redemption-staging-node-role
+        subnetSelectorTerms:
+          - tags:
+              karpenter.sh/discovery: redemption-staging
+        securityGroupSelectorTerms:
+          - tags:
+              karpenter.sh/discovery: redemption-staging
+        tags:
+          Application: the-redemption
+          Environment: staging
+          ManagedBy: karpenter

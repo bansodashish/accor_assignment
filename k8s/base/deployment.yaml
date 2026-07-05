@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redemption-api
+  namespace: redemption
+  labels:
+    app.kubernetes.io/name: redemption-api
+    app.kubernetes.io/part-of: the-redemption
+spec:
+  replicas: 6
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 30%
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redemption-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redemption-api
+        app.kubernetes.io/part-of: the-redemption
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: "8080"
+    spec:
+      serviceAccountName: redemption-api
+      terminationGracePeriodSeconds: 45
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: redemption-api
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: redemption-api
+      containers:
+        - name: api
+          image: AWS_ACCOUNT.dkr.ecr.eu-west-1.amazonaws.com/redemption-api:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: ENVIRONMENT
+              value: prod
+            - name: AWS_REGION
+              value: eu-west-1
+            - name: IDEMPOTENCY_TABLE
+              value: redemption-prod-idempotency
+          envFrom:
+            - secretRef:
+                name: redemption-api-secrets
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "768Mi"
+            limits:
+              cpu: "2"
+              memory: "1536Mi"
+          startupProbe:
+            httpGet:
+              path: /health/startup
+              port: http
+            failureThreshold: 30
+            periodSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 20"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            capabilities:
+              drop: ["ALL"]
+

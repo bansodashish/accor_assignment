@@ -1,0 +1,21 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: redemption-api
+  # Placed in observability so kube-prometheus-stack discovers it.
+  # namespaceSelector below restricts the scrape target to the redemption namespace.
+  namespace: observability
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - redemption
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redemption-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
